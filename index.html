@@ -45,12 +45,50 @@
 
   .sub { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
   .sub .note { font-size: 12px; color: var(--ink-dim); letter-spacing: 0.04em; }
-  #dateInput {
-    border: 0; background: transparent; color: var(--ink-dim); font-family: inherit;
-    font-size: 13px; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; text-align: right;
-    padding: 4px 0; width: auto; -webkit-appearance: none; appearance: none;
+  #dateLabel {
+    border: 0; background: transparent; font-family: inherit;
+    font-size: 13px; color: var(--ink-dim); letter-spacing: 0.06em; font-variant-numeric: tabular-nums;
+    padding: 6px 0 6px 12px;
   }
-  #dateInput.other { color: var(--accent); }
+  #dateLabel.other { color: var(--accent); }
+  #dateLabel.open { color: var(--accent); }
+
+  /* --- calendar --- */
+  #cal { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px 12px; }
+  .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .cal-nav button {
+    border: 0; background: transparent; color: var(--ink-dim); font-family: inherit;
+    font-size: 16px; padding: 4px 14px;
+  }
+  .cal-nav button:disabled { color: #3a3e49; }
+  #calTitle { font-size: 13px; color: var(--ink); letter-spacing: 0.08em; font-variant-numeric: tabular-nums; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .cal-dow { text-align: center; font-size: 10px; color: var(--ink-dim); padding: 4px 0 6px; letter-spacing: 0.1em; }
+  .cal-day {
+    position: relative; border: 0; background: transparent; color: var(--ink); font-family: inherit;
+    aspect-ratio: 1; border-radius: 10px; font-size: 14px; font-variant-numeric: tabular-nums;
+  }
+  .cal-day:disabled { color: #3a3e49; }
+  .cal-day.blank { visibility: hidden; }
+  .cal-day.sel { background: var(--accent); color: #14161b; font-weight: 600; }
+  .cal-day.dot::after {
+    content: ''; position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+  }
+  .cal-day.sel.dot::after { background: #14161b; }
+
+  /* --- day view (read) --- */
+  #readBtn {
+    border: 0; background: transparent; color: var(--accent); font-family: inherit;
+    font-size: 13px; padding: 2px 0; text-align: center; letter-spacing: 0.06em;
+  }
+  #dayView { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 6px 16px; }
+  .entry { border-top: 1px solid var(--line); padding: 12px 0; }
+  .entry:first-child { border-top: 0; }
+  .entry time { display: block; color: var(--ink-dim); font-size: 11px; margin-bottom: 6px; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+  .entry .row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 1.8; }
+  .entry .row b { color: var(--accent); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .entry .memo { font-size: 13px; color: var(--ink-dim); line-height: 1.7; margin-top: 4px; white-space: pre-wrap; overflow-wrap: break-word; }
 
   /* --- exercise card --- */
   .ex { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px 10px; }
@@ -145,8 +183,20 @@
 
   <div class="sub">
     <span class="note" id="menuNote"></span>
-    <input id="dateInput" type="date" aria-label="日付">
+    <button id="dateLabel" aria-label="カレンダーを開く"></button>
   </div>
+
+  <div id="cal" hidden>
+    <div class="cal-nav">
+      <button id="calPrev" aria-label="前の月">&#8249;</button>
+      <span id="calTitle"></span>
+      <button id="calNext" aria-label="次の月">&#8250;</button>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
+
+  <button id="readBtn" hidden></button>
+  <div id="dayView" hidden></div>
 
   <div id="cards" style="display:flex;flex-direction:column;gap:10px"></div>
 
@@ -267,12 +317,20 @@ function lsSet(key, v) { localStorage.setItem(key, JSON.stringify(v)); }
 // ============ state ============
 let menuKey = ls('menu', 'B1');
 if (!MENUS[menuKey]) menuKey = 'B1';
-let drafts = ls('drafts', {});           // { [menuKey]: { date, memo, extra:[[name,lo,hi,n]], sets:{ [name]: [{w,r,auto}] } } }
+let drafts = ls('drafts', {});           // { [menuKey]: { memo, extra:[[name,lo,hi,n]], sets:{ [name]: [{w,r,auto}] } } }
+// 選択日: 下書きが残っていれば前回の選択日を引き継ぐ（書きかけの過去日が今日に化けないように）。無ければ既定日
+let selectedDate = anyDraft() ? (ls('selDate', null) || defaultDate()) : defaultDate();
+let viewY, viewM; // カレンダー表示中の年月（Mは0始まり）
+// training/ のファイル一覧キャッシュ（ドット表示用）
+function getFiles() { return ls('trainFiles', []); }
+function setFiles(files) { lsSet('trainFiles', files); }
+function dateSet() { return new Set(getFiles().map(f => f.slice(0, 10))); }
+function filesOf(date) { return getFiles().filter(f => f.startsWith(date)).sort(); }
 let last = Object.assign({}, SEED_LAST, ls('last', {}));   // { [name]: { date, sets:[[w,r],...] } }
 function saveLast() { lsSet('last', last); }
 function saveDrafts() { lsSet('drafts', drafts); }
 function draft() {
-  if (!drafts[menuKey]) drafts[menuKey] = { date: defaultDate(), memo: '', extra: [], sets: {} };
+  if (!drafts[menuKey]) drafts[menuKey] = { memo: '', extra: [], sets: {} };
   return drafts[menuKey];
 }
 function menu() { return MENUS[menuKey]; }
@@ -330,10 +388,10 @@ function renderMenuToggle() {
 }
 function renderSub() {
   $('menuNote').textContent = menu().note;
-  const di = $('dateInput');
-  di.value = draft().date;
-  di.max = dateStr(0);
-  di.classList.toggle('other', draft().date !== defaultDate());
+  const dl = $('dateLabel');
+  dl.textContent = `${selectedDate} ▾`;
+  dl.classList.toggle('other', selectedDate !== defaultDate());
+  if (!$('cal').hidden) renderCal();
 }
 function lastText(name, hi) {
   const L = last[name];
@@ -473,11 +531,103 @@ function render() {
   renderChips();
   $('memo').value = draft().memo || '';
 }
-$('dateInput').onchange = () => {
-  const v = $('dateInput').value;
-  if (!v) return;
-  if (v > dateStr(0)) { $('dateInput').value = draft().date; toast('未来には書けない', true); return; }
-  draft().date = v; saveDrafts(); renderSub();
+// ============ 日付選択・カレンダー ============
+function setDate(d) {
+  selectedDate = d;
+  lsSet('selDate', d);
+  renderSub();
+  renderReadBtn();
+  hideDayView();
+}
+const CAL_DOW = ['月', '火', '水', '木', '金', '土', '日'];
+$('dateLabel').onclick = () => {
+  const cal = $('cal');
+  cal.hidden = !cal.hidden;
+  $('dateLabel').classList.toggle('open', !cal.hidden);
+  if (!cal.hidden) {
+    [viewY, viewM] = [Number(selectedDate.slice(0, 4)), Number(selectedDate.slice(5, 7)) - 1];
+    renderCal();
+  }
+};
+$('calPrev').onclick = () => { viewM--; if (viewM < 0) { viewM = 11; viewY--; } renderCal(); };
+$('calNext').onclick = () => { viewM++; if (viewM > 11) { viewM = 0; viewY++; } renderCal(); };
+function renderCal() {
+  if (viewY === undefined || $('cal').hidden) return;
+  const today = dateStr(0);
+  $('calTitle').textContent = `${viewY}年${viewM + 1}月`;
+  $('calNext').disabled = viewY > Number(today.slice(0, 4)) ||
+    (viewY === Number(today.slice(0, 4)) && viewM >= Number(today.slice(5, 7)) - 1);
+  const set = dateSet();
+  const g = $('calGrid');
+  g.textContent = '';
+  CAL_DOW.forEach(w => { const c = document.createElement('span'); c.className = 'cal-dow'; c.textContent = w; g.appendChild(c); });
+  const first = new Date(viewY, viewM, 1);
+  const lead = (first.getDay() + 6) % 7; // 月曜始まり
+  for (let i = 0; i < lead; i++) { const b = document.createElement('button'); b.className = 'cal-day blank'; b.disabled = true; g.appendChild(b); }
+  const days = new Date(viewY, viewM + 1, 0).getDate();
+  for (let d = 1; d <= days; d++) {
+    const ds = `${viewY}-${pad(viewM + 1)}-${pad(d)}`;
+    const b = document.createElement('button');
+    b.className = 'cal-day';
+    b.textContent = d;
+    if (set.has(ds)) b.classList.add('dot');
+    if (ds === selectedDate) b.classList.add('sel');
+    if (ds > today) b.disabled = true; // 未来日は書けない
+    else b.onclick = () => setDate(ds); // カレンダーは開いたまま
+    g.appendChild(b);
+  }
+}
+
+// ============ その日の記録を読む ============
+function renderReadBtn() {
+  const n = filesOf(selectedDate).length;
+  const btn = $('readBtn');
+  btn.hidden = n === 0;
+  if (n) btn.textContent = $('dayView').hidden ? `この日の記録を読む（${n}件）` : '閉じる';
+}
+function hideDayView() { $('dayView').hidden = true; $('dayView').textContent = ''; renderReadBtn(); }
+async function loadSession(name) { // キャッシュ優先。無ければ取りに行ってキャッシュに入れる
+  const cache = ls('sessCache', {});
+  if (cache[name] && cache[name].label !== undefined) return cache[name];
+  const data = await apiGET(`contents/${DIR}/${name}`);
+  cache[name] = parseSession(unb64(data.content));
+  lsSet('sessCache', cache);
+  return cache[name];
+}
+$('readBtn').onclick = async () => {
+  if (!$('dayView').hidden) { hideDayView(); return; }
+  const view = $('dayView');
+  view.textContent = '';
+  try {
+    for (const name of filesOf(selectedDate)) {
+      const sess = await loadSession(name);
+      const wrap = document.createElement('div');
+      wrap.className = 'entry';
+      const t = document.createElement('time');
+      const m = name.match(/-(\d{2})(\d{2})\d*\.md$/);
+      t.textContent = [m ? `${m[1]}:${m[2]}` : '', sess.label || ''].filter(Boolean).join(' · ');
+      wrap.appendChild(t);
+      for (const [ex, sets] of Object.entries(sess.sets || {})) {
+        const row = document.createElement('div'); row.className = 'row';
+        const nm = document.createElement('span'); nm.textContent = ex;
+        const v = document.createElement('b'); v.textContent = sets.map(([w, r]) => `${fmtW(w)}×${r}`).join(' · ');
+        row.appendChild(nm); row.appendChild(v); wrap.appendChild(row);
+      }
+      for (const [ex, reps] of Object.entries(sess.bw || {})) {
+        const row = document.createElement('div'); row.className = 'row';
+        const nm = document.createElement('span'); nm.textContent = ex;
+        const v = document.createElement('b'); v.textContent = reps;
+        row.appendChild(nm); row.appendChild(v); wrap.appendChild(row);
+      }
+      if (sess.memo) { const mm = document.createElement('div'); mm.className = 'memo'; mm.textContent = sess.memo; wrap.appendChild(mm); }
+      view.appendChild(wrap);
+    }
+    view.hidden = false;
+    renderReadBtn();
+  } catch (err) {
+    toast(explain(err), true);
+    if (err.code === 'nopat') $('settings').showModal();
+  }
 };
 $('memo').oninput = () => { draft().memo = $('memo').value; saveDrafts(); };
 
@@ -558,19 +708,29 @@ async function push(entry) {
     try { message = (await res.json()).message || ''; } catch (e) { /* no body */ }
     throw { code: 'http', status: res.status, message };
   }
+  const files = getFiles();
+  if (!files.includes(entry.path)) { files.push(entry.path); setFiles(files); renderCal(); renderReadBtn(); }
 }
 
 // ============ 履歴（前回値）: training/ の直近ファイルを読んで種目ごとの最新セットを作る ============
 // sessCache: { [filename]: { date, sets: { [name]: [[w,r],...] } } }
 function parseSession(md) {
-  const out = {};
-  let cur = null;
+  const out = { label: '', sets: {}, bw: {}, memo: '' };
+  let cur = null, inMemo = false;
   for (const line of md.split('\n')) {
+    const h = line.match(/^## .*— (.+)$/);
+    if (h) { out.label = h[1].trim(); continue; }
+    if (/^### メモ/.test(line)) { inMemo = true; continue; }
+    if (inMemo) { if (line.trim()) out.memo += (out.memo ? '\n' : '') + line.trim(); continue; }
     const m = line.match(/^\|\s*([^|]*?)\s*\|\s*(\d+)\s*\|\s*([\d.]+)\s*kg\s*\|\s*(\d+)\s*\|\s*$/);
-    if (!m) { if (!/^\|\s*\|/.test(line)) cur = null; continue; }
-    if (m[1]) cur = m[1];
-    if (!cur) continue;
-    (out[cur] = out[cur] || []).push([parseFloat(m[3]), parseInt(m[4], 10)]);
+    if (m) {
+      if (m[1]) cur = m[1];
+      if (cur) (out.sets[cur] = out.sets[cur] || []).push([parseFloat(m[3]), parseInt(m[4], 10)]);
+      continue;
+    }
+    const b = line.match(/^\|\s*([^|]+?)\s*\|\s*([\d][\d\s/]*?)\s*\|\s*$/); // 日課の2列表
+    if (b) { out.bw[b[1]] = b[2]; continue; }
+    if (!/^\|\s*\|/.test(line)) cur = null;
   }
   return out;
 }
@@ -592,13 +752,16 @@ async function refreshHistory() {
     let list = [];
     try { list = await apiGET(`contents/${DIR}`); }
     catch (e) { if (e.code === 'http' && e.status === 404) list = []; else throw e; } // まだ training/ が無い
-    const names = list.map(x => x.name).filter(n => /^\d{4}-\d{2}-\d{2}/.test(n) && n.endsWith('.md')).sort().slice(-20);
+    const all = list.map(x => x.name).filter(n => /^\d{4}-\d{2}-\d{2}/.test(n) && n.endsWith('.md')).sort();
+    setFiles(all);
+    renderCal(); renderReadBtn();
+    const names = all.slice(-20);
     const cache = ls('sessCache', {});
     let changed = false;
     for (const n of names) {
       if (cache[n]) continue;
       const data = await apiGET(`contents/${DIR}/${n}`);
-      cache[n] = { sets: parseSession(unb64(data.content)) };
+      cache[n] = parseSession(unb64(data.content));
       changed = true;
     }
     for (const k of Object.keys(cache)) if (!names.includes(k)) { delete cache[k]; changed = true; }
@@ -676,17 +839,23 @@ function afterSaved(date, recs) {
   saveDrafts();
   render();
 }
+function noteSaved(entry) { // ドット用の一覧に反映し、選択日を既定に戻す
+  const files = getFiles();
+  if (!files.includes(entry.path)) { files.push(entry.path); setFiles(files); }
+  setDate(defaultDate());
+}
 $('save').onclick = async () => {
   const recs = collect();
   if (!recs.length) { toast('レップが一つも入っていない', true); return; }
   const d = draft();
-  const date = d.date;
+  const date = selectedDate;
   const entry = { date, path: `${date}-${timeStr()}.md`, message: `training: ${date} ${menuKey}`, body: compose(date, recs, d.memo) };
   $('save').disabled = true;
   try {
     await push(entry);
     toast(`記した ✓ ${menu().label} ${recs.length}種目`);
     afterSaved(date, recs);
+    noteSaved(entry);
     flushQueue();
   } catch (err) {
     if (err.code === 'nopat') { toast(explain(err), true); $('settings').showModal(); }
@@ -694,6 +863,7 @@ $('save').onclick = async () => {
       setQueue(getQueue().concat([entry]));
       toast('圏外か。手元に置いた——次に開けば送る');
       afterSaved(date, recs);
+      noteSaved(entry);
     }
     else toast(explain(err), true); // HTTPエラー: 入力は残す。直してもう一度「記す」
   } finally {
@@ -703,6 +873,7 @@ $('save').onclick = async () => {
 
 // ============ boot ============
 render();
+renderReadBtn();
 setQueue(getQueue());
 if (navigator.onLine) { flushQueue(); refreshHistory(); }
 if (!localStorage.getItem('pat')) $('settings').showModal();
