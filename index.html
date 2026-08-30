@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>kintore-pen</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="筋トレ">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #14161b;
+    --panel: #1c1f26;
+    --line: #2a2e37;
+    --ink: #e8e4da;
+    --ink-dim: #8b8778;
+    --accent: #8ab4d4;
+    --accent-deep: #6a94b4;
+    --danger: #c4695e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans CJK JP", sans-serif;
+    padding: max(env(safe-area-inset-top), 20px) 16px calc(env(safe-area-inset-bottom) + 20px);
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .menu-toggle { display: flex; flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .menu-toggle button {
+    flex: 1; border: 0; background: transparent; color: var(--ink-dim);
+    font-size: 14px; padding: 9px 0; font-family: inherit; white-space: nowrap;
+  }
+  .menu-toggle button.on { background: var(--accent); color: #14161b; font-weight: 600; border-radius: 999px; }
+  #gear { border: 0; background: transparent; color: var(--ink-dim); font-size: 20px; padding: 6px 2px; }
+
+  .sub { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
+  .sub .note { font-size: 12px; color: var(--ink-dim); letter-spacing: 0.04em; }
+  #dateInput {
+    border: 0; background: transparent; color: var(--ink-dim); font-family: inherit;
+    font-size: 13px; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; text-align: right;
+    padding: 4px 0; width: auto; -webkit-appearance: none; appearance: none;
+  }
+  #dateInput.other { color: var(--accent); }
+
+  /* --- exercise card --- */
+  .ex { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px 10px; }
+  .ex:focus-within { border-color: var(--accent-deep); }
+  .ex-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .ex-name { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+  .ex-target { font-size: 12px; color: var(--ink-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ex-cue { font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
+  .ex-last { font-size: 12px; color: var(--ink-dim); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .ex-last b { color: var(--accent); font-weight: 500; }
+  .ex-hint { font-size: 12px; color: var(--accent); margin-top: 2px; }
+  .set { display: grid; grid-template-columns: 20px 1fr 1fr 28px; gap: 8px; align-items: center; margin-top: 8px; }
+  .set.bw { grid-template-columns: 20px 1fr 28px; }
+  .set .n { color: var(--ink-dim); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
+  .set .in { display: flex; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; }
+  .set .in:focus-within { border-color: var(--accent); }
+  .set.done .in { border-color: var(--accent-deep); }
+  .set input {
+    flex: 1; width: 100%; min-width: 0; border: 0; background: transparent; color: var(--ink);
+    font-size: 18px; font-family: inherit; outline: none; padding: 9px 0; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .set input::placeholder { color: #4d5160; }
+  .set .unit { font-size: 12px; color: var(--ink-dim); margin-left: 5px; }
+  .set .del { border: 0; background: transparent; color: #4d5160; font-size: 16px; padding: 6px 0; }
+  .ex-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+  .ex-foot button { border: 0; background: transparent; color: var(--ink-dim); font-family: inherit; font-size: 13px; padding: 6px 4px; }
+  .ex-foot button.rm { color: #4d5160; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chips .lbl { font-size: 12px; color: var(--ink-dim); margin-right: 2px; }
+  .chip {
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink-dim);
+    font-family: inherit; font-size: 13px; padding: 8px 14px;
+  }
+  .chip:disabled { opacity: 0.35; }
+  #otherSel {
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink-dim);
+    font-family: inherit; font-size: 13px; padding: 8px 12px; -webkit-appearance: none; appearance: none;
+  }
+  #otherWrap { display: flex; gap: 8px; }
+  #otherWrap input {
+    flex: 1; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink);
+    font-family: inherit; font-size: 14px; padding: 8px 14px; outline: none;
+  }
+  #otherWrap button { border: 0; border-radius: 999px; background: var(--line); color: var(--ink); font-family: inherit; font-size: 13px; padding: 8px 14px; }
+
+  label { display: block; font-size: 12px; letter-spacing: 0.12em; color: var(--ink-dim); margin-bottom: 8px; }
+  .field { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; }
+  .field:focus-within { border-color: var(--accent-deep); }
+  textarea {
+    width: 100%; border: 0; background: transparent; color: var(--ink);
+    font-size: 16px; font-family: inherit; outline: none; resize: none; line-height: 1.6; min-height: 3.5em;
+  }
+  ::placeholder { color: #4d5160; }
+  #save {
+    border: 0; border-radius: 999px; background: var(--accent); color: #14161b;
+    font-size: 17px; font-weight: 700; font-family: inherit; padding: 16px; letter-spacing: 0.08em;
+  }
+  #save:active { background: var(--accent-deep); }
+  #save:disabled { opacity: 0.5; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 84px);
+    transform: translateX(-50%) translateY(20px);
+    background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 999px; padding: 10px 22px; font-size: 14px;
+    opacity: 0; transition: opacity 0.25s, transform 0.25s; pointer-events: none;
+    max-width: 90vw;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.err { border-color: var(--danger); color: var(--danger); }
+  dialog {
+    border: 1px solid var(--line); border-radius: 20px; background: var(--panel); color: var(--ink);
+    width: min(90vw, 400px); padding: 24px; margin: auto;
+  }
+  dialog::backdrop { background: rgba(0,0,0,0.6); }
+  dialog h2 { font-size: 15px; margin-bottom: 14px; letter-spacing: 0.08em; }
+  dialog p { font-size: 12px; color: var(--ink-dim); line-height: 1.7; margin-top: 10px; }
+  dialog input { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14px; color: var(--ink); font-family: inherit; outline: none; }
+  dialog .row { display: flex; gap: 10px; margin-top: 16px; }
+  dialog button { flex: 1; border: 0; border-radius: 999px; padding: 12px; font-size: 15px; font-family: inherit; }
+  #patSave { background: var(--accent); color: #14161b; font-weight: 600; }
+  #patCancel { background: var(--line); color: var(--ink); }
+  #queueNote { font-size: 12px; color: var(--ink-dim); text-align: center; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="menu-toggle" role="group" aria-label="メニュー" id="menuToggle"></div>
+    <button id="gear" aria-label="設定">&#9881;</button>
+  </header>
+
+  <div class="sub">
+    <span class="note" id="menuNote"></span>
+    <input id="dateInput" type="date" aria-label="日付">
+  </div>
+
+  <div id="cards" style="display:flex;flex-direction:column;gap:10px"></div>
+
+  <div class="chips" id="chips"></div>
+  <div id="otherWrap" hidden>
+    <input id="otherName" type="text" placeholder="種目名" autocomplete="off">
+    <button id="otherAdd">追加</button>
+  </div>
+
+  <div class="field">
+    <label for="memo">メモ（重すぎた・次回の目安など）</label>
+    <textarea id="memo" placeholder="任意"></textarea>
+  </div>
+
+  <button id="save">記す</button>
+  <div id="queueNote" hidden></div>
+
+  <div id="toast" role="status"></div>
+
+  <dialog id="settings">
+    <h2>設定 — GitHub PAT</h2>
+    <input id="patInput" type="password" placeholder="github_pat_..." autocomplete="off">
+    <p>日記アプリ（nikki-pen）と同じ鍵でいい。nikki リポジトリ限定・Contents 読み書きの Fine-grained PAT。記録は nikki の training/ に入る。この端末の localStorage にだけ保存される。</p>
+    <div class="row">
+      <button id="patCancel">閉じる</button>
+      <button id="patSave">保存</button>
+    </div>
+  </dialog>
+
+<script>
+const OWNER = 'iwaryoweb';
+const REPO = 'nikki';
+const DIR = 'training';
+
+const $ = id => document.getElementById(id);
+
+// ============ メニュー定義（MISSION/life/筋トレと食事_研究調査レポート.md 2026/3/22改訂 と トレーニングログ.md 日課より） ============
+// items: [種目, レップ下限, レップ上限, セット数, 補足]
+const MENUS = {
+  B1: {
+    label: 'B1（上半身）', tab: 'B1', note: '上半身メイン · 木曜 · 45〜60分',
+    items: [
+      ['ラットプルダウン', 8, 12, 3, '肩をすくめない・肘を下に'],
+      ['チェストプレス', 8, 12, 3],
+      ['ラテラルレイズ', 12, 20, 3, '肩は慎重に'],
+      ['MTSアブドミナルクランチ', 8, 12, 2, '息を吐いて肋骨を下げる'],
+      ['ヒップアブダクション', 12, 15, 2, '上体を前傾させない']
+    ],
+    opt: [['リアデルトイド', 15, 20, 2], ['ショルダープレス', 8, 12, 2]]
+  },
+  B2: {
+    label: 'B2（下半身）', tab: 'B2', note: '下半身メイン · 日曜 · 45〜60分',
+    items: [
+      ['アークレッグプレス', 10, 15, 3],
+      ['レッグカール', 10, 12, 3],
+      ['ラットプルダウン', 8, 12, 3, '肩をすくめない・肘を下に'],
+      ['チェストプレス', 8, 12, 3],
+      ['ラテラルレイズ', 12, 20, 3, '肩は慎重に']
+    ],
+    opt: [['リアデルトイド', 15, 20, 2], ['ペクトラルフライ', 10, 12, 2]]
+  },
+  A: {
+    label: 'A（軽い日）', tab: 'A', note: '姿勢メンテ · 15〜20分 · RPE3〜5',
+    items: [
+      ['ラットプルダウン', 10, 12, 2, '軽め・フォーム重視（26kg以下）'],
+      ['ヒップアブダクション', 12, 15, 2, '反り腰改善'],
+      ['ペクトラルフライ', 15, 15, 1, '軽め・フルROM'],
+      ['リアデルトイド', 15, 20, 1, '上背部の血流']
+    ],
+    opt: []
+  },
+  HOME: {
+    label: '日課', tab: '日課', note: '自宅 · フォームローラーを骨盤に', bw: true,
+    items: [
+      ['足上げ腹筋', 30, 30, 1],
+      ['片足ずつ上げ腹筋', 40, 40, 1, '左右'],
+      ['足を閉じて膝を開いて足上げ', 30, 30, 1],
+      ['フォームローラー挟みツイスト足上げ', 40, 40, 1, '左右交互']
+    ],
+    opt: []
+  }
+};
+const MENU_KEYS = ['B1', 'B2', 'A', 'HOME'];
+// 「その他」候補（店のマシンリスト＋過去ログの種目）
+const OTHERS = ['レッグエクステンション', 'ヒップアダクション', 'ショルダープレス', 'ペクトラルフライ', 'リアデルトイド',
+  'トーソローテーション', 'バックエクステンション', 'レッグレイズ', 'ケーブルロウ', 'アブドミナルクランチ（非MTS）'];
+// 前回値の初期種（トレーニングログ.md の最新実績。training/ に記録が溜まれば上書きされる）
+const SEED_LAST = {
+  'ラットプルダウン': { date: '2026-03-22', sets: [[26, 12], [33, 12], [33, 10]] },
+  'チェストプレス': { date: '2026-03-22', sets: [[19, 12], [21.5, 12], [26, 12]] },
+  'ラテラルレイズ': { date: '2026-03-22', sets: [[5, 12], [5, 12], [5, 12]] },
+  'アークレッグプレス': { date: '2026-03-22', sets: [[50, 12], [55, 13], [57.5, 13]] },
+  'レッグカール': { date: '2026-03-22', sets: [[20, 12], [25, 12], [25, 12]] },
+  'MTSアブドミナルクランチ': { date: '2026-03-12', sets: [[20, 11], [20, 12]] },
+  'ヒップアブダクション': { date: '2026-03-12', sets: [[37.5, 12], [41.25, 12], [45, 12]] },
+  'リアデルトイド': { date: '2026-03-10', sets: [[19, 10], [21.5, 10], [19, 6]] },
+  'ペクトラルフライ': { date: '2026-03-10', sets: [[19, 12], [21.5, 10], [21.5, 10]] }
+};
+
+// ============ util ============
+function pad(n) { return String(n).padStart(2, '0'); }
+function fmt(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function dateStr(offset) { return fmt(new Date(Date.now() + offset * 86400000)); }
+function timeStr() { const d = new Date(); return `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; }
+// 朝4時までは「昨日」扱い（深夜のジム帰りは前日のセッション）
+function defaultDate() { return new Date().getHours() < 4 ? dateStr(-1) : dateStr(0); }
+const DOW = ['日', '月', '火', '水', '木', '金', '土'];
+function jaDate(ds) { // 2026-08-31 → 2026/8/31（月）
+  const [y, m, d] = ds.split('-').map(Number);
+  return `${y}/${m}/${d}（${DOW[new Date(y, m - 1, d).getDay()]}）`;
+}
+function shortDate(ds) { const [, m, d] = ds.split('-').map(Number); return `${m}/${d}`; }
+function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null; }
+function fmtW(w) { return String(w).replace(/\.0$/, ''); }
+function ls(key, fallback) { try { const v = JSON.parse(localStorage.getItem(key)); return v === null ? fallback : v; } catch (e) { return fallback; } }
+function lsSet(key, v) { localStorage.setItem(key, JSON.stringify(v)); }
+
+// ============ state ============
+let menuKey = ls('menu', 'B1');
+if (!MENUS[menuKey]) menuKey = 'B1';
+let drafts = ls('drafts', {});           // { [menuKey]: { date, memo, extra:[[name,lo,hi,n]], sets:{ [name]: [{w,r,auto}] } } }
+let last = Object.assign({}, SEED_LAST, ls('last', {}));   // { [name]: { date, sets:[[w,r],...] } }
+function saveLast() { lsSet('last', last); }
+function saveDrafts() { lsSet('drafts', drafts); }
+function draft() {
+  if (!drafts[menuKey]) drafts[menuKey] = { date: defaultDate(), memo: '', extra: [], sets: {} };
+  return drafts[menuKey];
+}
+function menu() { return MENUS[menuKey]; }
+function exercises() { return menu().items.concat(draft().extra); }
+function isBw() { return !!menu().bw; }
+function hasInput(d) {
+  if (!d) return false;
+  if (d.memo && d.memo.trim()) return true;
+  return Object.values(d.sets).some(rows => rows.some(s => s.r !== '' && s.r != null));
+}
+function anyDraft() { return Object.values(drafts).some(hasInput); }
+
+// 種目の行を用意する（無ければ前回値で重量だけ埋める。レップは空）
+function rowsFor(item) {
+  const [name, lo, hi, n] = item;
+  const d = draft();
+  if (!d.sets[name]) {
+    d.sets[name] = [];
+    for (let i = 0; i < n; i++) d.sets[name].push(newRow(name, i, item));
+  }
+  return d.sets[name];
+}
+function newRow(name, i, item) {
+  if (isBw()) return { w: '', r: '', auto: true };
+  const L = last[name];
+  let w = '';
+  if (L && L.sets.length) w = fmtW((L.sets[i] || L.sets[L.sets.length - 1])[0]);
+  return { w, r: '', auto: true };
+}
+// 前回値が更新されたら、未入力（auto）行の重量を差し替える
+function reapplyLast() {
+  for (const d of Object.values(drafts)) {
+    for (const [name, rows] of Object.entries(d.sets)) {
+      const L = last[name];
+      if (!L || !L.sets.length) continue;
+      rows.forEach((s, i) => {
+        if (s.auto && s.r === '') s.w = fmtW((L.sets[i] || L.sets[L.sets.length - 1])[0]);
+      });
+    }
+  }
+  saveDrafts();
+}
+
+// ============ render ============
+function renderMenuToggle() {
+  const box = $('menuToggle');
+  box.textContent = '';
+  MENU_KEYS.forEach(k => {
+    const b = document.createElement('button');
+    b.textContent = MENUS[k].tab;
+    b.classList.toggle('on', k === menuKey);
+    b.onclick = () => { menuKey = k; lsSet('menu', k); render(); };
+    box.appendChild(b);
+  });
+}
+function renderSub() {
+  $('menuNote').textContent = menu().note;
+  const di = $('dateInput');
+  di.value = draft().date;
+  di.max = dateStr(0);
+  di.classList.toggle('other', draft().date !== defaultDate());
+}
+function lastText(name, hi) {
+  const L = last[name];
+  if (!L || !L.sets.length) return null;
+  const parts = L.sets.map(([w, r]) => isBw() ? `${r}` : `${fmtW(w)}×${r}`).join(' · ');
+  let hint = '';
+  if (!isBw() && hi && L.sets.every(([, r]) => r >= hi)) hint = '前回は全セット上限。今回 +2.5〜5kg';
+  return { text: `前回 ${shortDate(L.date)}: `, parts, hint };
+}
+function renderCards() {
+  const wrap = $('cards');
+  wrap.textContent = '';
+  const bw = isBw();
+  exercises().forEach((item, idx) => {
+    const [name, lo, hi, n, cue] = item;
+    const rows = rowsFor(item);
+    const card = document.createElement('div');
+    card.className = 'ex';
+    const head = document.createElement('div');
+    head.className = 'ex-head';
+    const nm = document.createElement('span'); nm.className = 'ex-name'; nm.textContent = name;
+    const tg = document.createElement('span'); tg.className = 'ex-target';
+    tg.textContent = bw ? `${lo}回${cue ? `（${cue}）` : ''}` : `${lo === hi ? lo : `${lo}〜${hi}`}回 × ${n}`;
+    head.appendChild(nm); head.appendChild(tg);
+    card.appendChild(head);
+    if (cue && !bw) { const c = document.createElement('div'); c.className = 'ex-cue'; c.textContent = cue; card.appendChild(c); }
+    const lt = lastText(name, hi);
+    if (lt) {
+      const l = document.createElement('div'); l.className = 'ex-last';
+      l.appendChild(document.createTextNode(lt.text));
+      const b = document.createElement('b'); b.textContent = lt.parts; l.appendChild(b);
+      card.appendChild(l);
+      if (lt.hint) { const h = document.createElement('div'); h.className = 'ex-hint'; h.textContent = lt.hint; card.appendChild(h); }
+    }
+    rows.forEach((s, i) => card.appendChild(renderSet(name, rows, s, i, bw, lo)));
+    const foot = document.createElement('div'); foot.className = 'ex-foot';
+    const add = document.createElement('button'); add.textContent = '＋ セット';
+    add.onclick = () => { rows.push(newRow(name, rows.length, item)); saveDrafts(); render(); };
+    foot.appendChild(add);
+    const isExtra = idx >= menu().items.length;
+    if (isExtra) {
+      const rm = document.createElement('button'); rm.className = 'rm'; rm.textContent = '外す';
+      rm.onclick = () => {
+        const d = draft();
+        d.extra = d.extra.filter(e => e[0] !== name);
+        delete d.sets[name];
+        saveDrafts(); render();
+      };
+      foot.appendChild(rm);
+    }
+    card.appendChild(foot);
+    wrap.appendChild(card);
+  });
+}
+function renderSet(name, rows, s, i, bw, lo) {
+  const row = document.createElement('div');
+  row.className = 'set' + (bw ? ' bw' : '') + (s.r !== '' ? ' done' : '');
+  const n = document.createElement('span'); n.className = 'n'; n.textContent = i + 1;
+  row.appendChild(n);
+  if (!bw) {
+    const wi = mkInput('decimal', s.w, 'kg', '—');
+    wi.input.oninput = () => {
+      s.w = wi.input.value.trim(); s.auto = false;
+      // 後ろの空行にも同じ重量を流す（前回値が無い種目向け）
+      rows.slice(i + 1).forEach(t => { if (t.auto && t.r === '') t.w = s.w; });
+      saveDrafts();
+      rows.slice(i + 1).forEach((t, k) => {
+        const el = row.parentElement.querySelectorAll('.set')[i + 1 + k];
+        if (el && t.auto) el.querySelector('input[inputmode=decimal]').value = t.w;
+      });
+    };
+    row.appendChild(wi.box);
+  }
+  const ri = mkInput('numeric', s.r, '回', bw ? String(lo) : '');
+  ri.input.oninput = () => {
+    s.r = ri.input.value.trim();
+    row.classList.toggle('done', s.r !== '');
+    saveDrafts();
+  };
+  row.appendChild(ri.box);
+  const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.setAttribute('aria-label', 'このセットを消す');
+  del.onclick = () => { rows.splice(i, 1); if (!rows.length) rows.push(newRow(name, 0, [name])); saveDrafts(); render(); };
+  row.appendChild(del);
+  return row;
+}
+function mkInput(mode, value, unit, placeholder) {
+  const box = document.createElement('div'); box.className = 'in';
+  const input = document.createElement('input');
+  input.type = 'text'; input.inputMode = mode; input.autocomplete = 'off';
+  input.value = value; input.placeholder = placeholder;
+  const u = document.createElement('span'); u.className = 'unit'; u.textContent = unit;
+  box.appendChild(input); box.appendChild(u);
+  return { box, input };
+}
+function renderChips() {
+  const box = $('chips');
+  box.textContent = '';
+  const d = draft();
+  const present = new Set(exercises().map(e => e[0]));
+  const cands = menu().opt.concat(OTHERS.filter(o => !menu().opt.some(p => p[0] === o)).map(o => [o, 0, 0, 2]));
+  const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = '追加:';
+  box.appendChild(lbl);
+  menu().opt.forEach(o => {
+    const b = document.createElement('button'); b.className = 'chip'; b.textContent = `＋ ${o[0]}`;
+    b.disabled = present.has(o[0]);
+    b.onclick = () => addExtra(o);
+    box.appendChild(b);
+  });
+  const sel = document.createElement('select'); sel.id = 'otherSel'; sel.setAttribute('aria-label', 'その他の種目');
+  const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'その他 ▾'; sel.appendChild(o0);
+  cands.filter(c => !menu().opt.some(p => p[0] === c[0]) && !present.has(c[0])).forEach(c => {
+    const o = document.createElement('option'); o.value = c[0]; o.textContent = c[0]; sel.appendChild(o);
+  });
+  const of = document.createElement('option'); of.value = '__free'; of.textContent = '自由入力…'; sel.appendChild(of);
+  sel.onchange = () => {
+    if (sel.value === '__free') { $('otherWrap').hidden = false; $('otherName').focus(); sel.value = ''; return; }
+    if (sel.value) addExtra([sel.value, 0, 0, 2]);
+  };
+  box.appendChild(sel);
+}
+function addExtra(item) {
+  const d = draft();
+  if (exercises().some(e => e[0] === item[0])) { toast('もう入っている', true); return; }
+  d.extra.push(item.slice(0, 4));
+  saveDrafts(); render();
+}
+$('otherAdd').onclick = () => {
+  const name = $('otherName').value.trim();
+  if (!name) return;
+  $('otherName').value = ''; $('otherWrap').hidden = true;
+  addExtra([name, 0, 0, 2]);
+};
+function render() {
+  renderMenuToggle();
+  renderSub();
+  renderCards();
+  renderChips();
+  $('memo').value = draft().memo || '';
+}
+$('dateInput').onchange = () => {
+  const v = $('dateInput').value;
+  if (!v) return;
+  if (v > dateStr(0)) { $('dateInput').value = draft().date; toast('未来には書けない', true); return; }
+  draft().date = v; saveDrafts(); renderSub();
+};
+$('memo').oninput = () => { draft().memo = $('memo').value; saveDrafts(); };
+
+// ============ toast / settings ============
+let toastTimer;
+function toast(msg, isErr) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.toggle('err', !!isErr);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), isErr ? 5000 : 2600);
+}
+$('gear').onclick = () => { $('patInput').value = localStorage.getItem('pat') || ''; $('settings').showModal(); };
+$('patCancel').onclick = () => $('settings').close();
+$('patSave').onclick = () => {
+  const v = $('patInput').value.trim();
+  if (v) localStorage.setItem('pat', v); else localStorage.removeItem('pat');
+  $('settings').close();
+  toast(v ? '鍵を保存した' : '鍵を消した');
+  if (v) refreshHistory();
+};
+
+// ============ base64 (UTF-8) ============
+function b64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin);
+}
+function unb64(s) {
+  const bin = atob(s.replace(/\s/g, ''));
+  return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+}
+
+// ============ errors ============
+function explain(err) {
+  if (err.code === 'nopat') return '鍵が無い。設定で貼れ';
+  if (err.code === 'network') return '圏外か。届かなかった';
+  const hint = {
+    401: '鍵が無効。期限切れか文字列欠け',
+    403: '権限不足。PATのContentsをRead and writeに',
+    404: 'nikkiが見えない。PATのRepository accessを確認',
+    409: '競合。もう一度',
+    422: '同名ファイルか本文不正'
+  }[err.status] || err.message || '不明なエラー';
+  return `GitHub ${err.status}: ${hint}`;
+}
+
+// ============ GitHub API ============
+function headers(pat) { return { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github+json' }; }
+async function apiGET(path) {
+  const pat = localStorage.getItem('pat');
+  if (!pat) throw { code: 'nopat' };
+  let res;
+  try { res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/${path}`, { headers: headers(pat) }); }
+  catch (e) { throw { code: 'network' }; }
+  if (!res.ok) {
+    let message = '';
+    try { message = (await res.json()).message || ''; } catch (e) { /* no body */ }
+    throw { code: 'http', status: res.status, message };
+  }
+  return res.json();
+}
+async function push(entry) {
+  const pat = localStorage.getItem('pat');
+  if (!pat) throw { code: 'nopat' };
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/${DIR}/${entry.path}`, {
+      method: 'PUT',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, headers(pat)),
+      body: JSON.stringify({ message: entry.message, content: b64(entry.body) })
+    });
+  } catch (e) { throw { code: 'network' }; }
+  if (!res.ok) {
+    let message = '';
+    try { message = (await res.json()).message || ''; } catch (e) { /* no body */ }
+    throw { code: 'http', status: res.status, message };
+  }
+}
+
+// ============ 履歴（前回値）: training/ の直近ファイルを読んで種目ごとの最新セットを作る ============
+// sessCache: { [filename]: { date, sets: { [name]: [[w,r],...] } } }
+function parseSession(md) {
+  const out = {};
+  let cur = null;
+  for (const line of md.split('\n')) {
+    const m = line.match(/^\|\s*([^|]*?)\s*\|\s*(\d+)\s*\|\s*([\d.]+)\s*kg\s*\|\s*(\d+)\s*\|\s*$/);
+    if (!m) { if (!/^\|\s*\|/.test(line)) cur = null; continue; }
+    if (m[1]) cur = m[1];
+    if (!cur) continue;
+    (out[cur] = out[cur] || []).push([parseFloat(m[3]), parseInt(m[4], 10)]);
+  }
+  return out;
+}
+function rebuildLast(cache) {
+  const merged = Object.assign({}, SEED_LAST);
+  Object.keys(cache).sort().forEach(name => {
+    const date = name.slice(0, 10);
+    for (const [ex, sets] of Object.entries(cache[name].sets)) {
+      if (!merged[ex] || merged[ex].date <= date) merged[ex] = { date, sets };
+    }
+  });
+  last = merged; saveLast();
+}
+let refreshing = false;
+async function refreshHistory() {
+  if (refreshing || !navigator.onLine || !localStorage.getItem('pat')) return;
+  refreshing = true;
+  try {
+    let list = [];
+    try { list = await apiGET(`contents/${DIR}`); }
+    catch (e) { if (e.code === 'http' && e.status === 404) list = []; else throw e; } // まだ training/ が無い
+    const names = list.map(x => x.name).filter(n => /^\d{4}-\d{2}-\d{2}/.test(n) && n.endsWith('.md')).sort().slice(-20);
+    const cache = ls('sessCache', {});
+    let changed = false;
+    for (const n of names) {
+      if (cache[n]) continue;
+      const data = await apiGET(`contents/${DIR}/${n}`);
+      cache[n] = { sets: parseSession(unb64(data.content)) };
+      changed = true;
+    }
+    for (const k of Object.keys(cache)) if (!names.includes(k)) { delete cache[k]; changed = true; }
+    if (changed || !localStorage.getItem('last')) {
+      lsSet('sessCache', cache);
+      rebuildLast(cache);
+      reapplyLast();
+      render();
+    }
+  } catch (e) { /* 背景更新は黙って諦める */ }
+  finally { refreshing = false; }
+}
+
+// ============ compose / save ============
+function collect() { // 記録対象: レップが入っているセットだけ
+  const bw = isBw();
+  const out = [];
+  exercises().forEach(item => {
+    const name = item[0];
+    const rows = (draft().sets[name] || []).filter(s => num(s.r) !== null && (bw || num(s.w) !== null));
+    if (rows.length) out.push({ name, sets: rows.map(s => [bw ? null : num(s.w), num(s.r)]) });
+  });
+  return out;
+}
+function compose(date, recs, memo) {
+  const bw = isBw();
+  let md = `## ${jaDate(date)}— ${menu().label}\n\n`;
+  if (bw) {
+    md += '| 種目 | 回数 |\n|------|------|\n';
+    recs.forEach(r => { md += `| ${r.name} | ${r.sets.map(s => s[1]).join(' / ')} |\n`; });
+  } else {
+    md += '### 筋トレ\n\n| 種目 | セット | 重量 | レップ |\n|------|--------|------|--------|\n';
+    recs.forEach(r => r.sets.forEach(([w, rep], i) => { md += `| ${i === 0 ? r.name + ' ' : ''}| ${i + 1} | ${fmtW(w)}kg | ${rep} |\n`; }));
+  }
+  if (memo && memo.trim()) {
+    md += '\n### メモ\n\n' + memo.trim().split('\n').map(l => l.trim()).filter(Boolean).map(l => `- ${l.replace(/^[-・]\s*/, '')}`).join('\n') + '\n';
+  }
+  return md;
+}
+
+// --- offline queue ---
+function getQueue() { return ls('queue', []); }
+function setQueue(q) {
+  lsSet('queue', q);
+  const n = $('queueNote');
+  n.hidden = q.length === 0;
+  n.textContent = q.length ? `未送信 ${q.length} 件（次にオンラインで開いた時に送る）` : '';
+}
+let flushing = false;
+async function flushQueue() {
+  if (flushing) return;
+  const q = getQueue();
+  if (!q.length) return;
+  flushing = true;
+  const rest = [];
+  let failed = null;
+  try {
+    for (const e of q) {
+      if (failed) { rest.push(e); continue; }
+      try { await push(e); } catch (err) { failed = err; rest.push(e); }
+    }
+  } finally { flushing = false; }
+  setQueue(rest);
+  const sent = q.length - rest.length;
+  if (failed) toast(`${sent ? `${sent} 件送った。` : ''}未送信 ${rest.length} 件が残った——${explain(failed)}`, true);
+  else if (sent) toast(`未送信分 ${sent} 件を送った`);
+}
+
+function afterSaved(date, recs) {
+  if (!isBw()) {
+    recs.forEach(r => { if (!last[r.name] || last[r.name].date <= date) last[r.name] = { date, sets: r.sets }; });
+    saveLast();
+  }
+  delete drafts[menuKey];
+  saveDrafts();
+  render();
+}
+$('save').onclick = async () => {
+  const recs = collect();
+  if (!recs.length) { toast('レップが一つも入っていない', true); return; }
+  const d = draft();
+  const date = d.date;
+  const entry = { date, path: `${date}-${timeStr()}.md`, message: `training: ${date} ${menuKey}`, body: compose(date, recs, d.memo) };
+  $('save').disabled = true;
+  try {
+    await push(entry);
+    toast(`記した ✓ ${menu().label} ${recs.length}種目`);
+    afterSaved(date, recs);
+    flushQueue();
+  } catch (err) {
+    if (err.code === 'nopat') { toast(explain(err), true); $('settings').showModal(); }
+    else if (err.code === 'network') {
+      setQueue(getQueue().concat([entry]));
+      toast('圏外か。手元に置いた——次に開けば送る');
+      afterSaved(date, recs);
+    }
+    else toast(explain(err), true); // HTTPエラー: 入力は残す。直してもう一度「記す」
+  } finally {
+    $('save').disabled = false;
+  }
+};
+
+// ============ boot ============
+render();
+setQueue(getQueue());
+if (navigator.onLine) { flushQueue(); refreshHistory(); }
+if (!localStorage.getItem('pat')) $('settings').showModal();
+
+let swReg = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (navigator.onLine) {
+    if (getQueue().length) flushQueue();
+    refreshHistory();
+  }
+  if (swReg) swReg.update().catch(() => {});
+});
+window.addEventListener('online', () => { if (getQueue().length) flushQueue(); });
+
+if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.register('sw.js').then(r => { swReg = r; }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    if (anyDraft()) { toast('新しい版がある。次に開くと切り替わる'); return; }
+    reloading = true;
+    location.reload();
+  });
+}
+</script>
+</body>
+</html>
