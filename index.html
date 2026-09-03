@@ -155,6 +155,16 @@
   }
   #pFreeName { flex: 1.6; }
   #pFreeG { flex: 1; text-align: right; }
+  .p-edit-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  .p-edit-row input {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink);
+    font-family: inherit; font-size: 14px; padding: 9px 12px; outline: none; min-width: 0;
+  }
+  .p-edit-row input:focus { border-color: var(--accent); }
+  .p-edit-row .en { flex: 1.8; }
+  .p-edit-row .eg { flex: 0.7; text-align: right; }
+  .p-edit-row .unit { font-size: 12px; color: var(--ink-dim); }
+  .p-edit-row .del { border: 0; background: transparent; color: #4d5160; font-size: 16px; padding: 4px; }
   #pWeek { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
   .pw { text-align: center; font-size: 10px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
   .pw b { display: block; font-size: 14px; font-weight: 600; color: var(--ink); }
@@ -236,6 +246,15 @@
       <input id="pFreeName" type="text" placeholder="品目（任意）" autocomplete="off">
       <input id="pFreeG" type="text" inputmode="numeric" placeholder="g" autocomplete="off">
       <button id="pFreeAdd" class="chip">追加</button>
+    </div>
+    <div id="pEditor" hidden class="field">
+      <label>品目マスタの編集（品目名とP）</label>
+      <div id="pEditList"></div>
+      <div class="chips" style="margin-top:12px">
+        <button id="pEditAdd" class="chip">＋ 品目</button>
+        <button id="pEditReset" class="chip">初期に戻す</button>
+        <button id="pEditDone" class="chip" style="color:var(--accent);border-color:var(--accent-deep)">完了</button>
+      </div>
     </div>
     <div class="field"><label>直近7日</label><div id="pWeek"></div></div>
   </div>
@@ -581,7 +600,8 @@ function render() {
   $('cards').hidden = isP;
   $('chips').hidden = isP;
   $('memoField').hidden = isP;
-  if (isP) { $('otherWrap').hidden = true; renderProtein(); return; }
+  if (!isP) { $('pEditor').hidden = true; }
+  if (isP) { $('otherWrap').hidden = true; $('pChips').hidden = false; $('pFreeWrap').hidden = false; $('pEditor').hidden = true; renderProtein(); return; }
   renderCards();
   renderChips();
   $('memo').value = draft().memo || '';
@@ -844,6 +864,16 @@ async function refreshHistory() {
     }
     for (const k of Object.keys(mcache)) if (!mnames.includes(k)) { delete mcache[k]; mchanged = true; }
     if (mchanged) { lsSet('mealsCache', mcache); if (menu().protein) renderProtein(); }
+    // 品目マスタ: ローカルに未送信の編集があれば送る。無ければリモートを採用
+    if (ls('pQuickDirty', false)) await syncItems();
+    else if (mlist.some(x => x.name === '_items.md')) {
+      const it = await apiGET('contents/meals/_items.md');
+      const remote = parseItems(unb64(it.content));
+      if (remote.length && JSON.stringify(remote) !== JSON.stringify(getQuick())) {
+        setQuick(remote);
+        if (menu().protein && $('pEditor').hidden) renderProtein();
+      }
+    }
   } catch (e) { /* 背景更新は黙って諦める */ }
   finally { refreshing = false; }
 }
@@ -862,6 +892,41 @@ function composeP(date, its) {
   its.forEach(i => { md += `| ${i.t} | ${i.name} | ${fmtW(i.p)}g |\n`; });
   md += `\n小計: ${fmtW(its.reduce((a, x) => a + x.p, 0))}g\n`;
   return md;
+}
+function getQuick() { return ls('pQuick', null) || P_QUICK.map(x => x.slice()); }
+function setQuick(list) { lsSet('pQuick', list); }
+function composeItems(list) {
+  let md = '# 品目マスタ（kintore-pen Pタブ）\n\n| 品目 | P |\n|------|-----|\n';
+  list.forEach(([name, g]) => { md += `| ${name} | ${fmtW(g)}g |\n`; });
+  return md;
+}
+function parseItems(md) {
+  const out = [];
+  for (const line of md.split('\n')) {
+    const m = line.match(/^\|\s*([^|]+?)\s*\|\s*([\d.]+)\s*g\s*\|\s*$/);
+    if (m) out.push([m[1], parseFloat(m[2])]);
+  }
+  return out;
+}
+// 品目マスタを nikki の meals/_items.md と同期（端末が消えても戻せるように）
+let itemsSyncing = false;
+async function syncItems() {
+  if (itemsSyncing || !navigator.onLine || !localStorage.getItem('pat') || !ls('pQuickDirty', false)) return;
+  itemsSyncing = true;
+  try {
+    let sha = null;
+    try { sha = (await apiGET('contents/meals/_items.md')).sha; }
+    catch (e) { if (!(e.code === 'http' && e.status === 404)) throw e; }
+    const payload = { message: 'protein: 品目マスタ更新', content: b64(composeItems(getQuick())) };
+    if (sha) payload.sha = sha;
+    const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/meals/_items.md`, {
+      method: 'PUT',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, headers(localStorage.getItem('pat'))),
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) lsSet('pQuickDirty', false);
+  } catch (e) { /* 次の機会に */ }
+  finally { itemsSyncing = false; }
 }
 function pDraftItems() { const d = draft(); if (!d.items) d.items = []; return d.items; }
 function pSentItemsOf(date) {
@@ -901,11 +966,14 @@ function renderProtein() {
   pSentItemsOf(selectedDate).forEach(([t, name, p]) => list.appendChild(pRow(t, name, p, null)));
   pDraftItems().filter(i => i.d === selectedDate).forEach(item => list.appendChild(pRow(item.t, item.name, item.p, item)));
   const chips = $('pChips'); chips.textContent = '';
-  P_QUICK.forEach(([name, p]) => {
-    const b = document.createElement('button'); b.className = 'chip'; b.textContent = `${name} +${p}`;
+  getQuick().forEach(([name, p]) => {
+    const b = document.createElement('button'); b.className = 'chip'; b.textContent = `${name} +${fmtW(p)}`;
     b.onclick = () => addP(name, p);
     chips.appendChild(b);
   });
+  const ed = document.createElement('button'); ed.className = 'chip'; ed.textContent = '品目を編集';
+  ed.onclick = openEditor;
+  chips.appendChild(ed);
   const wk = $('pWeek'); wk.textContent = '';
   for (let i = 6; i >= 0; i--) {
     const ds = dateStr(-i);
@@ -918,6 +986,43 @@ function renderProtein() {
     wk.appendChild(cell);
   }
 }
+// --- 品目マスタ編集モード ---
+let pEditWork = [];
+function openEditor() {
+  pEditWork = getQuick().map(x => x.slice());
+  $('pChips').hidden = true; $('pFreeWrap').hidden = true;
+  $('pEditor').hidden = false;
+  renderPEditor();
+}
+function renderPEditor() {
+  const box = $('pEditList'); box.textContent = '';
+  pEditWork.forEach((item, i) => {
+    const row = document.createElement('div'); row.className = 'p-edit-row';
+    const en = document.createElement('input'); en.className = 'en'; en.type = 'text'; en.value = item[0]; en.placeholder = '品目名';
+    en.oninput = () => { item[0] = en.value; };
+    const eg = document.createElement('input'); eg.className = 'eg'; eg.type = 'text'; eg.inputMode = 'decimal'; eg.value = item[1] === '' ? '' : fmtW(item[1]); eg.placeholder = 'P';
+    eg.oninput = () => { item[1] = eg.value; };
+    const u = document.createElement('span'); u.className = 'unit'; u.textContent = 'g';
+    const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.setAttribute('aria-label', 'この品目を消す');
+    del.onclick = () => { pEditWork.splice(i, 1); renderPEditor(); };
+    row.appendChild(en); row.appendChild(eg); row.appendChild(u); row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+$('pEditAdd').onclick = () => { pEditWork.push(['', '']); renderPEditor(); const rows = $('pEditList').querySelectorAll('.en'); rows[rows.length - 1].focus(); };
+$('pEditReset').onclick = () => { pEditWork = P_QUICK.map(x => x.slice()); renderPEditor(); toast('初期リストに戻した（完了で確定）'); };
+$('pEditDone').onclick = () => {
+  const clean = pEditWork
+    .map(([n, g]) => [String(n).trim(), num(g)])
+    .filter(([n, g]) => n && g !== null && g > 0);
+  if (!clean.length) { toast('品目が空だ。1つは残せ', true); return; }
+  setQuick(clean);
+  lsSet('pQuickDirty', true);
+  $('pEditor').hidden = true; $('pChips').hidden = false; $('pFreeWrap').hidden = false;
+  renderProtein();
+  toast('品目を更新した');
+  syncItems();
+};
 $('pFreeAdd').onclick = () => {
   const g = num($('pFreeG').value);
   if (g === null || g <= 0) { toast('グラムを入れろ', true); return; }
