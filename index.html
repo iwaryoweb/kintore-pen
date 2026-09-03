@@ -22,6 +22,7 @@
     --danger: #c4695e;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; } /* インラインdisplayやCSSのdisplayがhidden属性を打ち消すのを防ぐ */
   html, body { height: 100%; }
   body {
     background: var(--bg);
@@ -136,6 +137,30 @@
   }
   #otherWrap button { border: 0; border-radius: 999px; background: var(--line); color: var(--ink); font-family: inherit; font-size: 13px; padding: 8px 14px; }
 
+  /* --- protein tab --- */
+  .p-total { display: flex; align-items: baseline; gap: 8px; }
+  .p-total b { font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .p-total span { font-size: 14px; color: var(--ink-dim); }
+  .p-bar { height: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 10px 0 6px; }
+  #pFill { height: 100%; background: var(--accent); width: 0%; border-radius: 999px; transition: width 0.2s; }
+  .p-item { display: flex; align-items: center; gap: 10px; padding: 8px 0 0; font-size: 14px; }
+  .p-item time { color: var(--ink-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .p-item .nm { flex: 1; overflow-wrap: anywhere; }
+  .p-item b { color: var(--accent); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .p-item .del { border: 0; background: transparent; color: #4d5160; font-size: 15px; padding: 2px 4px; }
+  .p-item.sent { opacity: 0.55; }
+  #pFreeWrap input {
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink);
+    font-family: inherit; font-size: 14px; padding: 8px 14px; outline: none; min-width: 0;
+  }
+  #pFreeName { flex: 1.6; }
+  #pFreeG { flex: 1; text-align: right; }
+  #pWeek { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .pw { text-align: center; font-size: 10px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .pw b { display: block; font-size: 14px; font-weight: 600; color: var(--ink); }
+  .pw.hit b { color: var(--accent); }
+  .pw.zero b { color: #4d5160; }
+
   label { display: block; font-size: 12px; letter-spacing: 0.12em; color: var(--ink-dim); margin-bottom: 8px; }
   .field { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; }
   .field:focus-within { border-color: var(--accent-deep); }
@@ -200,13 +225,28 @@
 
   <div id="cards" style="display:flex;flex-direction:column;gap:10px"></div>
 
+  <div id="pPanel" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div class="field">
+      <div class="p-total"><b id="pNow">0</b><span>/ 130g</span></div>
+      <div class="p-bar"><div id="pFill"></div></div>
+      <div id="pList"></div>
+    </div>
+    <div class="chips" id="pChips"></div>
+    <div id="pFreeWrap" class="chips" style="flex-wrap:nowrap">
+      <input id="pFreeName" type="text" placeholder="品目（任意）" autocomplete="off">
+      <input id="pFreeG" type="text" inputmode="numeric" placeholder="g" autocomplete="off">
+      <button id="pFreeAdd" class="chip">追加</button>
+    </div>
+    <div class="field"><label>直近7日</label><div id="pWeek"></div></div>
+  </div>
+
   <div class="chips" id="chips"></div>
   <div id="otherWrap" hidden>
     <input id="otherName" type="text" placeholder="種目名" autocomplete="off">
     <button id="otherAdd">追加</button>
   </div>
 
-  <div class="field">
+  <div class="field" id="memoField">
     <label for="memo">メモ（重すぎた・次回の目安など）</label>
     <textarea id="memo" placeholder="任意"></textarea>
   </div>
@@ -279,7 +319,14 @@ const MENUS = {
     opt: []
   }
 };
-const MENU_KEYS = ['B1', 'B2', 'A', 'HOME'];
+MENUS.P = { label: 'タンパク質', tab: 'P', note: 'タンパク質 · 目標 130g/日', protein: true, items: [], opt: [] };
+const MENU_KEYS = ['B1', 'B2', 'A', 'HOME', 'P'];
+const P_TARGET = 130;
+// 早見表（MISSION/life/食事ログ.md より）
+const P_QUICK = [
+  ['プロテイン+牛乳', 27], ['プロテイン(水)', 20], ['肉150g', 33], ['卵1個', 7], ['オイコスPRO', 25],
+  ['飲むヨーグルト', 8], ['銀鮭1切れ', 18], ['豆腐 半丁', 8], ['ファミチキ', 15]
+];
 // 「その他」候補（店のマシンリスト＋過去ログの種目）
 const OTHERS = ['レッグエクステンション', 'ヒップアダクション', 'ショルダープレス', 'ペクトラルフライ', 'リアデルトイド',
   'トーソローテーション', 'バックエクステンション', 'レッグレイズ', 'ケーブルロウ', 'アブドミナルクランチ（非MTS）'];
@@ -301,6 +348,7 @@ function pad(n) { return String(n).padStart(2, '0'); }
 function fmt(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 function dateStr(offset) { return fmt(new Date(Date.now() + offset * 86400000)); }
 function timeStr() { const d = new Date(); return `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; }
+function hm() { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 // 朝4時までは「昨日」扱い（深夜のジム帰りは前日のセッション）
 function defaultDate() { return new Date().getHours() < 4 ? dateStr(-1) : dateStr(0); }
 const DOW = ['日', '月', '火', '水', '木', '金', '土'];
@@ -339,7 +387,8 @@ function isBw() { return !!menu().bw; }
 function hasInput(d) {
   if (!d) return false;
   if (d.memo && d.memo.trim()) return true;
-  return Object.values(d.sets).some(rows => rows.some(s => s.r !== '' && s.r != null));
+  if (d.items && d.items.length) return true;
+  return Object.values(d.sets || {}).some(rows => rows.some(s => s.r !== '' && s.r != null));
 }
 function anyDraft() { return Object.values(drafts).some(hasInput); }
 
@@ -527,6 +576,12 @@ $('otherAdd').onclick = () => {
 function render() {
   renderMenuToggle();
   renderSub();
+  const isP = !!menu().protein;
+  $('pPanel').hidden = !isP;
+  $('cards').hidden = isP;
+  $('chips').hidden = isP;
+  $('memoField').hidden = isP;
+  if (isP) { $('otherWrap').hidden = true; renderProtein(); return; }
   renderCards();
   renderChips();
   $('memo').value = draft().memo || '';
@@ -538,6 +593,7 @@ function setDate(d) {
   renderSub();
   renderReadBtn();
   hideDayView();
+  if (menu().protein) renderProtein();
 }
 const CAL_DOW = ['月', '火', '水', '木', '金', '土', '日'];
 $('dateLabel').onclick = () => {
@@ -697,7 +753,7 @@ async function push(entry) {
   if (!pat) throw { code: 'nopat' };
   let res;
   try {
-    res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/${DIR}/${entry.path}`, {
+    res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/${entry.dir || DIR}/${entry.path}`, {
       method: 'PUT',
       headers: Object.assign({ 'Content-Type': 'application/json' }, headers(pat)),
       body: JSON.stringify({ message: entry.message, content: b64(entry.body) })
@@ -708,8 +764,10 @@ async function push(entry) {
     try { message = (await res.json()).message || ''; } catch (e) { /* no body */ }
     throw { code: 'http', status: res.status, message };
   }
-  const files = getFiles();
-  if (!files.includes(entry.path)) { files.push(entry.path); setFiles(files); renderCal(); renderReadBtn(); }
+  if (!entry.dir || entry.dir === DIR) {
+    const files = getFiles();
+    if (!files.includes(entry.path)) { files.push(entry.path); setFiles(files); renderCal(); renderReadBtn(); }
+  }
 }
 
 // ============ 履歴（前回値）: training/ の直近ファイルを読んで種目ごとの最新セットを作る ============
@@ -771,8 +829,139 @@ async function refreshHistory() {
       reapplyLast();
       render();
     }
+    // meals/（タンパク質記録）
+    let mlist = [];
+    try { mlist = await apiGET('contents/meals'); }
+    catch (e) { if (e.code === 'http' && e.status === 404) mlist = []; else throw e; }
+    const mnames = mlist.map(x => x.name).filter(n => /^\d{4}-\d{2}-\d{2}/.test(n) && n.endsWith('.md')).sort().slice(-30);
+    const mcache = ls('mealsCache', {});
+    let mchanged = false;
+    for (const n of mnames) {
+      if (mcache[n]) continue;
+      const data = await apiGET(`contents/meals/${n}`);
+      mcache[n] = parseMeals(unb64(data.content));
+      mchanged = true;
+    }
+    for (const k of Object.keys(mcache)) if (!mnames.includes(k)) { delete mcache[k]; mchanged = true; }
+    if (mchanged) { lsSet('mealsCache', mcache); if (menu().protein) renderProtein(); }
   } catch (e) { /* 背景更新は黙って諦める */ }
   finally { refreshing = false; }
+}
+
+// ============ タンパク質タブ ============
+function parseMeals(md) {
+  const items = [];
+  for (const line of md.split('\n')) {
+    const m = line.match(/^\|\s*(\d{2}:\d{2})\s*\|\s*([^|]+?)\s*\|\s*([\d.]+)\s*g\s*\|\s*$/);
+    if (m) items.push([m[1], m[2], parseFloat(m[3])]);
+  }
+  return { items };
+}
+function composeP(date, its) {
+  let md = `## ${jaDate(date)}— タンパク質\n\n| 時刻 | 品目 | P |\n|------|------|-----|\n`;
+  its.forEach(i => { md += `| ${i.t} | ${i.name} | ${fmtW(i.p)}g |\n`; });
+  md += `\n小計: ${fmtW(its.reduce((a, x) => a + x.p, 0))}g\n`;
+  return md;
+}
+function pDraftItems() { const d = draft(); if (!d.items) d.items = []; return d.items; }
+function pSentItemsOf(date) {
+  const mc = ls('mealsCache', {});
+  let out = [];
+  Object.keys(mc).sort().forEach(n => { if (n.startsWith(date)) out = out.concat(mc[n].items || []); });
+  return out;
+}
+function pTotalOf(date) {
+  const sent = pSentItemsOf(date).reduce((a, i) => a + i[2], 0);
+  const dr = ((drafts.P && drafts.P.items) || []).filter(i => i.d === date).reduce((a, i) => a + i.p, 0);
+  return sent + dr;
+}
+function pRow(t, name, p, item) {
+  const row = document.createElement('div');
+  row.className = 'p-item' + (item ? '' : ' sent');
+  const tm = document.createElement('time'); tm.textContent = t;
+  const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = name;
+  const g = document.createElement('b'); g.textContent = `${fmtW(p)}g`;
+  row.appendChild(tm); row.appendChild(nm); row.appendChild(g);
+  if (item) {
+    const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.setAttribute('aria-label', 'この行を消す');
+    del.onclick = () => { const d = draft(); d.items = d.items.filter(x => x !== item); saveDrafts(); renderProtein(); };
+    row.appendChild(del);
+  }
+  return row;
+}
+function addP(name, p) {
+  pDraftItems().push({ d: selectedDate, t: hm(), name, p });
+  saveDrafts(); renderProtein();
+}
+function renderProtein() {
+  const total = pTotalOf(selectedDate);
+  $('pNow').textContent = fmtW(total);
+  $('pFill').style.width = Math.min(100, total / P_TARGET * 100) + '%';
+  const list = $('pList'); list.textContent = '';
+  pSentItemsOf(selectedDate).forEach(([t, name, p]) => list.appendChild(pRow(t, name, p, null)));
+  pDraftItems().filter(i => i.d === selectedDate).forEach(item => list.appendChild(pRow(item.t, item.name, item.p, item)));
+  const chips = $('pChips'); chips.textContent = '';
+  P_QUICK.forEach(([name, p]) => {
+    const b = document.createElement('button'); b.className = 'chip'; b.textContent = `${name} +${p}`;
+    b.onclick = () => addP(name, p);
+    chips.appendChild(b);
+  });
+  const wk = $('pWeek'); wk.textContent = '';
+  for (let i = 6; i >= 0; i--) {
+    const ds = dateStr(-i);
+    const tot = pTotalOf(ds);
+    const cell = document.createElement('span');
+    cell.className = 'pw' + (tot >= P_TARGET ? ' hit' : tot === 0 ? ' zero' : '');
+    const b = document.createElement('b'); b.textContent = tot ? fmtW(tot) : '·';
+    cell.appendChild(b);
+    cell.appendChild(document.createTextNode(shortDate(ds)));
+    wk.appendChild(cell);
+  }
+}
+$('pFreeAdd').onclick = () => {
+  const g = num($('pFreeG').value);
+  if (g === null || g <= 0) { toast('グラムを入れろ', true); return; }
+  addP($('pFreeName').value.trim() || 'その他', g);
+  $('pFreeName').value = ''; $('pFreeG').value = '';
+};
+function pCacheAdd(path, its) {
+  const mc = ls('mealsCache', {});
+  mc[path] = { items: its.map(i => [i.t, i.name, i.p]) };
+  lsSet('mealsCache', mc);
+}
+async function saveProtein() {
+  const items = pDraftItems();
+  if (!items.length) { toast('まだ何も足していない', true); return; }
+  const groups = {};
+  items.forEach(i => (groups[i.d] = groups[i.d] || []).push(i));
+  $('save').disabled = true;
+  let sentG = 0, failed = null, queued = 0;
+  try {
+    for (const [date, its] of Object.entries(groups)) {
+      const entry = { date, dir: 'meals', path: `${date}-${timeStr()}.md`, message: `protein: ${date} ${fmtW(its.reduce((a, i) => a + i.p, 0))}g`, body: composeP(date, its) };
+      try {
+        await push(entry);
+        pCacheAdd(entry.path, its);
+        sentG += its.reduce((a, i) => a + i.p, 0);
+        draft().items = draft().items.filter(i => !its.includes(i));
+        saveDrafts();
+      } catch (err) {
+        if (err.code === 'network') {
+          setQueue(getQueue().concat([entry]));
+          queued++;
+          draft().items = draft().items.filter(i => !its.includes(i));
+          saveDrafts();
+        } else { failed = err; break; }
+      }
+    }
+  } finally { $('save').disabled = false; }
+  renderProtein();
+  if (failed) {
+    if (failed.code === 'nopat') { toast(explain(failed), true); $('settings').showModal(); }
+    else toast(explain(failed), true); // 入力は残る。直してもう一度「記す」
+  }
+  else if (queued) toast('圏外か。手元に置いた——次に開けば送る');
+  else { toast(`記した ✓ タンパク質 ${fmtW(sentG)}g`); flushQueue(); }
 }
 
 // ============ compose / save ============
@@ -845,6 +1034,7 @@ function noteSaved(entry) { // ドット用の一覧に反映し、選択日を�
   setDate(defaultDate());
 }
 $('save').onclick = async () => {
+  if (menu().protein) { saveProtein(); return; }
   const recs = collect();
   if (!recs.length) { toast('レップが一つも入っていない', true); return; }
   const d = draft();
