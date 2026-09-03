@@ -290,7 +290,7 @@
   </dialog>
 
 <script>
-const VERSION = 'v1.3.3';
+const VERSION = 'v1.3.4';
 const OWNER = 'iwaryoweb';
 const REPO = 'nikki';
 const DIR = 'training';
@@ -382,7 +382,7 @@ function jaDate(ds) { // 2026-08-31 → 2026/8/31（月）
 }
 function shortDate(ds) { const [, m, d] = ds.split('-').map(Number); return `${m}/${d}`; }
 function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null; }
-function fmtW(w) { return String(w).replace(/\.0$/, ''); }
+function fmtW(w) { const n = parseFloat(w); return Number.isFinite(n) ? String(Math.round(n * 100) / 100) : String(w); } // 小数の加算誤差(50.5999…)を表示前に丸める
 function ls(key, fallback) { try { const v = JSON.parse(localStorage.getItem(key)); return v === null ? fallback : v; } catch (e) { return fallback; } }
 function lsSet(key, v) { localStorage.setItem(key, JSON.stringify(v)); }
 
