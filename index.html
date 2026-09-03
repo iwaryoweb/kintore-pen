@@ -277,8 +277,12 @@
 
   <dialog id="settings">
     <h2>設定 — GitHub PAT</h2>
+    <p id="verLine" style="margin:0 0 10px;color:var(--accent)"></p>
     <input id="patInput" type="password" placeholder="github_pat_..." autocomplete="off">
     <p>日記アプリ（nikki-pen）と同じ鍵でいい。nikki リポジトリ限定・Contents 読み書きの Fine-grained PAT。記録は nikki の training/ に入る。この端末の localStorage にだけ保存される。</p>
+    <div class="row">
+      <button id="forceUpdate" style="background:var(--line);color:var(--ink)">最新版に取り込み直す</button>
+    </div>
     <div class="row">
       <button id="patCancel">閉じる</button>
       <button id="patSave">保存</button>
@@ -286,6 +290,7 @@
   </dialog>
 
 <script>
+const VERSION = 'v1.3.2';
 const OWNER = 'iwaryoweb';
 const REPO = 'nikki';
 const DIR = 'training';
@@ -718,6 +723,22 @@ function toast(msg, isErr) {
   toastTimer = setTimeout(() => t.classList.remove('show'), isErr ? 5000 : 2600);
 }
 $('gear').onclick = () => { $('patInput').value = localStorage.getItem('pat') || ''; $('settings').showModal(); };
+$('verLine').textContent = `版: ${VERSION}`;
+// SWとキャッシュを剥がして取り直す（鍵や下書きは消えない）。更新が詰まったとき用
+$('forceUpdate').onclick = async () => {
+  $('forceUpdate').textContent = '取り込み中…';
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch (e) { /* 剥がせるだけ剥がして進む */ }
+  location.replace(location.pathname + '?u=' + Date.now());
+};
 $('patCancel').onclick = () => $('settings').close();
 $('patSave').onclick = () => {
   const v = $('patInput').value.trim();
