@@ -1,4 +1,4 @@
-const CACHE = 'kintore-pen-v8';
+const CACHE = 'kintore-pen-v9';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './apple-touch-icon.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

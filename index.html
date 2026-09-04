@@ -170,6 +170,12 @@
   .pw b { display: block; font-size: 14px; font-weight: 600; color: var(--ink); }
   .pw.hit b { color: var(--accent); }
   .pw.zero b { color: #4d5160; }
+  #pBank { display: flex; align-items: center; gap: 14px; }
+  .bank-donut { width: 84px; height: 84px; flex: none; }
+  .bank-nums { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--ink-dim); }
+  .bank-nums b { font-size: 24px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .bank-nums b.minus { color: var(--danger); }
+  #pBankNote { font-size: 11px; color: var(--ink-dim); line-height: 1.7; margin-top: 10px; }
 
   label { display: block; font-size: 12px; letter-spacing: 0.12em; color: var(--ink-dim); margin-bottom: 8px; }
   .field { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; }
@@ -257,6 +263,11 @@
       </div>
     </div>
     <div class="field"><label>直近7日</label><div id="pWeek"></div></div>
+    <div class="field" id="pBankField">
+      <label>筋肉バンク</label>
+      <div id="pBank"></div>
+      <div id="pBankNote" hidden>推定モデル。日々のP合計を、フルペース+7g/日（筋組織+30g × タンパク質含有22%）を上限に積み立てる。P130以上=+7 ／ 100〜129=+4〜7 ／ 80〜99=0〜+4 ／ 80未満はマイナス（0gで-7）。記録が無い日は数えない。当日分は日付が変わってから確定。答え合わせは月1のInBody骨格筋量。</div>
+    </div>
   </div>
 
   <div class="chips" id="chips"></div>
@@ -290,7 +301,7 @@
   </dialog>
 
 <script>
-const VERSION = 'v1.3.4';
+const VERSION = 'v1.4';
 const OWNER = 'iwaryoweb';
 const REPO = 'nikki';
 const DIR = 'training';
@@ -372,6 +383,7 @@ function pad(n) { return String(n).padStart(2, '0'); }
 function fmt(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 function dateStr(offset) { return fmt(new Date(Date.now() + offset * 86400000)); }
 function timeStr() { const d = new Date(); return `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; }
+const fmt1 = n => String(Math.round(n * 10) / 10);
 function hm() { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 // 朝4時までは「昨日」扱い（深夜のジム帰りは前日のセッション）
 function defaultDate() { return new Date().getHours() < 4 ? dateStr(-1) : dateStr(0); }
@@ -724,6 +736,7 @@ function toast(msg, isErr) {
 }
 $('gear').onclick = () => { $('patInput').value = localStorage.getItem('pat') || ''; $('settings').showModal(); };
 $('verLine').textContent = VERSION;
+$('pBankField').onclick = () => { $('pBankNote').hidden = !$('pBankNote').hidden; };
 // SWとキャッシュを剥がして取り直す（鍵や下書きは消えない）。更新が詰まったとき用
 $('forceUpdate').onclick = async () => {
   $('forceUpdate').textContent = '取り込み中…';
@@ -885,6 +898,7 @@ async function refreshHistory() {
     }
     for (const k of Object.keys(mcache)) if (!mnames.includes(k)) { delete mcache[k]; mchanged = true; }
     if (mchanged) { lsSet('mealsCache', mcache); if (menu().protein) renderProtein(); }
+    updatePLedger(); // Pタブを開かない日でもファイルが30件枠から溢れる前に台帳へ写す
     // 品目マスタ: ローカルに未送信の編集があれば送る。無ければリモートを採用
     if (ls('pQuickDirty', false)) await syncItems();
     else if (mlist.some(x => x.name === '_items.md')) {
@@ -1006,6 +1020,67 @@ function renderProtein() {
     cell.appendChild(document.createTextNode(shortDate(ds)));
     wk.appendChild(cell);
   }
+  renderBank();
+}
+// ============ 筋肉バンク ============
+// 日次P合計から「筋肉として固定された推定タンパク質」を積み立てる推定モデル。
+// フルペース = 筋組織+30g/日 × タンパク質含有22% ≒ +7g/日。80g未満は分解超過でマイナス。
+// mealsCache は直近30ファイルで入れ替わるため、日次合計は pDays 台帳に永続化する。
+const BANK_GOAL = 600; // 目標体型（骨格筋+2.7kg × 22%）までの積立
+function bankDelta(p) {
+  if (p >= 130) return 7;
+  if (p >= 100) return 4 + 3 * (p - 100) / 30;
+  if (p >= 80) return 4 * (p - 80) / 20;
+  return -7 * (80 - p) / 80;
+}
+function updatePLedger() {
+  const mc = ls('mealsCache', {});
+  const days = {};
+  Object.keys(mc).forEach(n => {
+    const d = n.slice(0, 10);
+    days[d] = (days[d] || 0) + (mc[n].items || []).reduce((a, i) => a + i[2], 0);
+  });
+  const led = ls('pDays', {});
+  let changed = false;
+  Object.entries(days).forEach(([d, tot]) => {
+    if (!(led[d] >= tot)) { led[d] = tot; changed = true; } // 台帳は増える方向にのみ更新
+  });
+  if (changed) lsSet('pDays', led);
+  return led;
+}
+function bankTotal() {
+  const led = ls('pDays', {});
+  const today = defaultDate();
+  let sum = 0, n = 0;
+  Object.entries(led).forEach(([d, tot]) => { if (d < today) { sum += bankDelta(tot); n++; } });
+  return { sum, n };
+}
+function renderBank() {
+  const box = $('pBank'); if (!box) return;
+  updatePLedger();
+  const { sum, n } = bankTotal();
+  const todayP = pTotalOf(defaultDate());
+  const todayDelta = bankDelta(todayP);
+  const pct = Math.max(0, Math.min(100, sum / BANK_GOAL * 100));
+  const R = 34, C = 2 * Math.PI * R;
+  const neg = sum < 0;
+  const todayLine = todayP === 0
+    ? '今日はまだ記録なし（記録ゼロの日は数えない）'
+    : `今日の見込み ${todayDelta >= 0 ? '+' : ''}${fmt1(todayDelta)}g（日付確定で計上）`;
+  box.innerHTML = `
+    <svg viewBox="0 0 84 84" class="bank-donut" aria-hidden="true">
+      <circle cx="42" cy="42" r="${R}" fill="none" stroke="var(--line)" stroke-width="9"/>
+      <circle cx="42" cy="42" r="${R}" fill="none" stroke="${neg ? 'var(--danger)' : 'var(--accent)'}"
+        stroke-width="9" stroke-linecap="round" stroke-dasharray="${C}"
+        stroke-dashoffset="${neg ? 0 : C * (1 - pct / 100)}"
+        transform="rotate(-90 42 42)"${neg ? ' opacity="0.35"' : ''}/>
+    </svg>
+    <div class="bank-nums">
+      <b class="${neg ? 'minus' : ''}">${fmt1(sum)}g</b>
+      <span>目標 ${BANK_GOAL}g の ${pct.toFixed(1)}%（${n}日分）</span>
+      <span>筋組織換算 ${fmt1(sum * 4.5)}g</span>
+      <span>${todayLine}</span>
+    </div>`;
 }
 // --- 品目マスタ編集モード ---
 let pEditWork = [];
